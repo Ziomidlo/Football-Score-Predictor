@@ -29,3 +29,7 @@ for match in matches:
 
 df = pd.DataFrame(structured_data)
 print(df.head())
+df.info()
+df.isnull().sum()
+df.nunique()
+df.describe()
