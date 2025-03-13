@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 import json
+import csv 
 import seaborn as seaborn
 import matplotlib.pyplot as plt
 from datetime import datetime
@@ -8,38 +9,71 @@ from scipy.stats import spearmanr, pearsonr
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
 
 
 uri = "https://api.football-data.org/v4/competitions/PL/"
-finishedMatches = "matches?status=FINISHED"
+matches = "/matches"
+finishedMatches =  matches + "?status=FINISHED"
+upcomingMaches = matches + "?status=TIMED"
 standings = "standings"
+lastSeason = "/?season=2023"
 
-
-headers = {'X-Auth-Token': ''}
-response = requests.get(uri + finishedMatches, headers=headers)
+#Get Data From API
+headers = {'X-Auth-Token': '26d39f32a17044b7a972763541e4a083'}
+response = requests.get(uri + finishedMatches , headers=headers)
 data = response.json()
-with open('dataPLMatches.json', 'w') as f:
-   json.dump(data, f)
 
-with open("dataPLMatches.json", "r") as file:
+with open('dataPLMatches2024Finished.json', 'w') as file:
+   json.dump(data, file)
+
+with open('dataPLMatches2024Finished.json') as file:
    data = json.load(file)
 
+
+responseUpcoming = requests.get(uri + upcomingMaches, headers=headers)
+dataUpcoming = responseUpcoming.json()
+
+with open('dataPLMatches2024Upcoming.json', 'w') as file:
+   json.dump(dataUpcoming, file)
+
+with open('dataPLMatches2024Upcoming.json') as file:
+   dataUpcoming = json.load(file)
+
+responseLastSeason = requests.get(uri + matches + lastSeason, headers=headers)
+dataLastSeason = responseLastSeason.json()
+
+with open('dataPLMatches2023.json', 'w') as file:
+   json.dump(dataLastSeason, file)
+
+with open('dataPLMatches2023.json') as file:
+   dataLastSeason = json.load(file)
+   
 responseTeam = requests.get(uri + standings, headers=headers)
 dataTeam = responseTeam.json()
 
-with open('dataPLStandings.json', 'w') as f:
-   json.dump(dataTeam, f)
+with open('dataPLStandings.json', 'w') as file:
+   json.dump(dataTeam, file)
 
-with open("dataPLStandings.json", "r") as file:
+with open('dataPLStandings.json') as file:
    dataTeam = json.load(file)
 
+pastDataPL = pd.read_csv('past-dataPL.csv')
+
+#print(pastDataPL)
+
+#Data Structuring
+
 matches = data['matches']
+lastSeasonMatches = dataLastSeason['matches']
+upcomingMatches = dataUpcoming['matches']
 teams = dataTeam['standings'][0]['table']
-structured_data = []
-team_stats = {}
+
+structured_current_season_data = []
+structured_last_season_data = []
+structured_table_data = {}
 
 team_name_mapping = {
     "AFC Bournemouth": 1,
@@ -64,11 +98,10 @@ team_name_mapping = {
     "Wolverhampton Wanderers FC": 20
 }
 
-
 for team in teams:
    team_name = team["team"]["name"]
    team_id = team_name_mapping.get(team_name, -1)
-   team_stats[team_name] = {
+   structured_table_data[team_name] = {
       "teamId": team_id,
       "position": team["position"],
       "playedGames": team["playedGames"],
@@ -81,15 +114,21 @@ for team in teams:
       "points": team["points"]
    }
 
-for match in matches: 
+
+for match in matches:
+
    home_score = match["score"]["fullTime"].get("home", None)
    away_score = match["score"]["fullTime"].get("away", None)
    home_team = match["homeTeam"]["name"]
    away_team = match["awayTeam"]["name"]
    home_team_id = team_name_mapping.get(home_team, -1)
    away_team_id = team_name_mapping.get(away_team, -1)
+   current_home_possition = structured_table_data[home_team]["position"]
+   current_away_possition = structured_table_data[away_team]["position"] 
    match_date = datetime.strptime(match["utcDate"], '%Y-%m-%dT%H:%M:%SZ')
    goal_diff = None if home_score is None or away_score is None else (home_score - away_score)
+   season = "24-25"
+   
 
 
    if home_score is None or away_score is None:
@@ -101,7 +140,43 @@ for match in matches:
    else:
       result = "Draw"
 
-   structured_data.append({
+   structured_current_season_data.append({
+      "season": season,
+      "competition": match["competition"]["name"],
+      "match_date": match_date,
+      "home_team": home_team,
+      "away_team": away_team,
+      "home_score": home_score,
+      "away_score": away_score,
+      "result": result,
+      "match_status": match["status"],
+      "goal_difference": goal_diff
+   })
+
+for match in lastSeasonMatches:
+
+   home_score = match["score"]["fullTime"].get("home", None)
+   away_score = match["score"]["fullTime"].get("away", None)
+   home_team = match["homeTeam"]["name"]
+   away_team = match["awayTeam"]["name"]
+   home_team_id = team_name_mapping.get(home_team, -1)
+   away_team_id = team_name_mapping.get(away_team, -1)
+   match_date = datetime.strptime(match["utcDate"], '%Y-%m-%dT%H:%M:%SZ')
+   goal_diff = None if home_score is None or away_score is None else (home_score - away_score)
+   season = "23-24"
+   
+   
+   if home_score is None or away_score is None:
+      result = "Unknown"
+   elif home_score > away_score:
+      result = "Home win"
+   elif home_score < away_score:
+      result = "Away win"
+   else:
+      result = "Draw"
+
+   structured_last_season_data.append({
+      "season": season,
       "competition": match["competition"]["name"],
       "match_date": match_date,
       "home_team": home_team,
@@ -114,7 +189,16 @@ for match in matches:
    })
 
 
-df = pd.DataFrame.from_dict(team_stats, orient="index").reset_index()
+#Creating Data Frames & Analysis
+kaggleDf = pd.read_csv("past-dataPL.csv")
+print(kaggleDf.head())
+kaggleDf.info()
+kaggleDf.isnull().sum()
+kaggleDf.nunique()
+kaggleDf.describe()
+
+
+df = pd.DataFrame.from_dict(structured_table_data, orient="index").reset_index()
 df.rename(columns={"index": "team"}, inplace=True)
 print(df.head())
 df.info()
@@ -122,16 +206,31 @@ df.isnull().sum()
 df.nunique()
 df.describe()
 
+df2 = pd.DataFrame(structured_current_season_data)
+df2 = df2.sort_values(by='match_date', ascending=False)
+print(df2.head())
+df2.info()
+df2.isnull().sum()
+df2.nunique()
+df2.describe()
 
+dfLastSeason = pd.DataFrame(structured_last_season_data)
+print(dfLastSeason.head())
+dfLastSeason.info()
+dfLastSeason.isnull().sum()
+dfLastSeason.nunique()
+dfLastSeason.describe()
+
+#Feauture Engineering
 def calculate_form(team, match_date):
-   past_matches = df2[
+   pastMatches = df2[
    ((df2['home_team'] == team) | (df2['away_team'] == team))
    & (df2['match_date'] < match_date)
    ].sort_values(by='match_date', ascending=False).head(5)
 
    points = 0
    total_points = 15
-   for _, row in past_matches.iterrows():
+   for _, row in pastMatches.iterrows():
       if row['home_team'] == team:
          if row['result'] == "Home win":
             points += 3
@@ -160,15 +259,8 @@ def calculate_goal_difference(team, match_date):
    return goal_difference
 
 
-df2 = pd.DataFrame(structured_data)
 
-df2 = df2.sort_values(by='match_date', ascending=False)
-print(df2.head())
-df2.info()
-df2.isnull().sum()
-df2.nunique()
-df2.describe()
-
+#Data for model traning
 df2['result_numeric'] = df2['result'].map({"Home win" : 1, "Draw" : 0, "Away win" : -1})
 df2["home_team_form"] = df2.apply(lambda row: calculate_form(row["home_team"], row["match_date"]), axis=1)
 df2["away_team_form"] = df2.apply(lambda row: calculate_form(row["away_team"], row["match_date"]), axis=1)
@@ -178,11 +270,13 @@ df2["home_team_strength"] = df2["home_team_form"] + df2["home_team_goal_differen
 df2["away_team_strength"] = df2["away_team_form"] + df2["away_team_goal_difference"]
 df2["goal_diff_delta"] = df2["home_team_goal_difference"] - df2["away_team_goal_difference"]
 
+#Correlation Analysis
 corr, p_value = spearmanr(df2["home_team_strength"], df2["result_numeric"])
 print(f"Spearsman's correlation: {corr:.3f}, p_value: {p_value:.3f}")
 pearson_corr, p_value = pearsonr(df2["home_team_strength"], df2["result_numeric"])
 print(f"Pearson's correlation: {pearson_corr:.3f}, p_value: {p_value:.3f}")
 
+#Model Training
 X = df2[["goal_diff_delta", "home_team_strength"]]
 y = df2["result_numeric"]
 
@@ -192,7 +286,7 @@ scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
 X_test = scaler.transform(X_test)
 
-model = LogisticRegression(class_weight="balanced")
+model =  LogisticRegression(class_weight="balanced")
 model.fit(X_train, y_train)
 
 
@@ -201,13 +295,15 @@ print("Accuracy: ", accuracy_score(y_test, y_pred))
 print("Classification Report: ", classification_report(y_test, y_pred))
 print("Confusion Matrix: ", confusion_matrix(y_test, y_pred))
 
+
+#Visualization
+
 #seaborn.boxplot(x=df2["goal_diff_delta"], y=df2["result_numeric"])
 #plt.title("Goal Difference Delta vs. Match Result")
 #plt.xlabel("Goal Difference Delta (Home - Away)")
 #plt.ylabel("Match Result")
 #plt.savefig("Boxplot of Goal Difference Delta and Match Result")
 #plt.show()
-
 
 
 #seaborn.boxplot(x=df2["home_team_strength"], y=df2["result_numeric"])
@@ -237,9 +333,6 @@ print("Confusion Matrix: ", confusion_matrix(y_test, y_pred))
 #plt.ylabel("Match Result")
 #plt.savefig("Boxplot of Home Team Form and Match Result")
 #plt.show()
-
-
-
 
 
 # seaborn.histplot(df['result'])
