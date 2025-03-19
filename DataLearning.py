@@ -13,24 +13,23 @@ from sklearn.linear_model import LogisticRegression, LinearRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
 
-
 uri = "https://api.football-data.org/v4/competitions/PL/"
 matches = "/matches"
 finishedMatches =  matches + "?status=FINISHED"
 upcomingMaches = matches + "?status=TIMED"
 standings = "standings"
-lastSeason = "/?season=2023"
+cleanedDataFolder = "cleaned_data/"
 
 #Get Data From API
 headers = {'X-Auth-Token': '26d39f32a17044b7a972763541e4a083'}
 response = requests.get(uri + finishedMatches , headers=headers)
-data = response.json()
+dataFinished = response.json()
 
 with open('dataPLMatches2024Finished.json', 'w') as file:
-   json.dump(data, file)
+   json.dump(dataFinished, file)
 
 with open('dataPLMatches2024Finished.json') as file:
-   data = json.load(file)
+   dataFinished = json.load(file)
 
 
 responseUpcoming = requests.get(uri + upcomingMaches, headers=headers)
@@ -41,16 +40,7 @@ with open('dataPLMatches2024Upcoming.json', 'w') as file:
 
 with open('dataPLMatches2024Upcoming.json') as file:
    dataUpcoming = json.load(file)
-
-responseLastSeason = requests.get(uri + matches + lastSeason, headers=headers)
-dataLastSeason = responseLastSeason.json()
-
-with open('dataPLMatches2023.json', 'w') as file:
-   json.dump(dataLastSeason, file)
-
-with open('dataPLMatches2023.json') as file:
-   dataLastSeason = json.load(file)
-   
+  
 responseTeam = requests.get(uri + standings, headers=headers)
 dataTeam = responseTeam.json()
 
@@ -60,134 +50,79 @@ with open('dataPLStandings.json', 'w') as file:
 with open('dataPLStandings.json') as file:
    dataTeam = json.load(file)
 
-pastDataPL = pd.read_csv('past-dataPL.csv')
 
-#print(pastDataPL)
+#Variables
+
+finishedMatches = dataFinished['matches']
+upcomingMatches = dataUpcoming['matches']
+teamsStandings = dataTeam['standings'][0]['table']
+seasons = pd.read_csv(cleanedDataFolder + 'seasons.csv')
+pastMatches = pd.read_csv(cleanedDataFolder + 'past-matches.csv')
+pastSeasonsStats = pd.read_csv(cleanedDataFolder + 'season-stats.csv')
+teams = pd.read_csv(cleanedDataFolder + 'teams.csv') 
 
 #Data Structuring
 
-matches = data['matches']
-lastSeasonMatches = dataLastSeason['matches']
-upcomingMatches = dataUpcoming['matches']
-teams = dataTeam['standings'][0]['table']
+structuredCurrentSeasonData = []
+structuredLastSeasonData = []
+structuredTableData = {}
 
-structured_current_season_data = []
-structured_last_season_data = []
-structured_table_data = {}
+teamMapping = dict(zip(teams['Team'], teams['Id']))
 
-team_name_mapping = {
-    "AFC Bournemouth": 1,
-    "Arsenal FC": 2,
-    "Aston Villa FC": 3,
-    "Brentford FC": 4,
-    "Brighton & Hove Albion FC": 5,
-    "Chelsea FC": 6,
-    "Crystal Palace FC": 7,
-    "Everton FC": 8,
-    "Fulham FC": 9,
-    "Ipswich Town FC": 10,
-    "Leicester City FC": 11,
-    "Liverpool FC": 12,
-    "Manchester City FC": 13,
-    "Manchester United FC": 14,
-    "Newcastle United FC": 15,
-    "Nottingham Forest FC": 16,
-    "Southampton FC": 17,
-    "Tottenham Hotspur FC": 18,
-    "West Ham United FC": 19,
-    "Wolverhampton Wanderers FC": 20
-}
-
-for team in teams:
-   team_name = team["team"]["name"]
-   team_id = team_name_mapping.get(team_name, -1)
-   structured_table_data[team_name] = {
-      "teamId": team_id,
+for team in teamsStandings:
+   teamName = team["team"]["name"]
+   teamId = teamMapping.get(teamName, -1)
+   structuredTableData[teamName] = {
+      "team_id" : teamId,
       "position": team["position"],
-      "playedGames": team["playedGames"],
+      "played_games": team["playedGames"],
       "won": team["won"],
       "draw": team["draw"],
       "lost": team["lost"],
-      "goalsFor": team["goalsFor"],
-      "goalsAgainst": team["goalsAgainst"],
-      "goalDifference": team["goalDifference"],
+      "goals_for": team["goalsFor"],
+      "goals_against": team["goalsAgainst"],
+      "goal_difference": team["goalDifference"],
       "points": team["points"]
    }
 
 
-for match in matches:
+for match in finishedMatches:
 
-   home_score = match["score"]["fullTime"].get("home", None)
-   away_score = match["score"]["fullTime"].get("away", None)
-   home_team = match["homeTeam"]["name"]
-   away_team = match["awayTeam"]["name"]
-   home_team_id = team_name_mapping.get(home_team, -1)
-   away_team_id = team_name_mapping.get(away_team, -1)
-   current_home_possition = structured_table_data[home_team]["position"]
-   current_away_possition = structured_table_data[away_team]["position"] 
+   homeScore = match["score"]["fullTime"].get("home", None)
+   awayScore = match["score"]["fullTime"].get("away", None)
+   homeTeam = match["homeTeam"]["name"]
+   awayTeam = match["awayTeam"]["name"]
+   homeTeamId = teamMapping.get(homeTeam, -1)
+   awayTeamId = teamMapping.get(awayTeam, -1)
+   currentHomePossition = structuredTableData[homeTeam]["position"]
+   CurrentAwayPossition = structuredTableData[awayTeam]["position"] 
    match_date = datetime.strptime(match["utcDate"], '%Y-%m-%dT%H:%M:%SZ')
-   goal_diff = None if home_score is None or away_score is None else (home_score - away_score)
-   season = "24-25"
+   goalDiff = None if homeScore is None or awayScore is None else (homeScore - awayScore)
+   season = "2024/2025"
    
-
-
-   if home_score is None or away_score is None:
+   if homeScore is None or awayScore is None:
       result = "Unknown"
-   elif home_score > away_score:
+   elif homeScore > awayScore:
       result = "Home win"
-   elif home_score < away_score:
+   elif homeScore < awayScore:
       result = "Away win"
    else:
       result = "Draw"
 
-   structured_current_season_data.append({
+   structuredCurrentSeasonData.append({
       "season": season,
       "competition": match["competition"]["name"],
       "match_date": match_date,
-      "home_team": home_team,
-      "away_team": away_team,
-      "home_score": home_score,
-      "away_score": away_score,
+      "home_team_id" : homeTeamId,
+      "home_team": homeTeam,
+      "away_team_id" : awayTeamId,
+      "away_team": awayTeam,
+      "home_score": homeScore,
+      "away_score": awayScore,
       "result": result,
       "match_status": match["status"],
-      "goal_difference": goal_diff
+      "goal_difference": goalDiff
    })
-
-for match in lastSeasonMatches:
-
-   home_score = match["score"]["fullTime"].get("home", None)
-   away_score = match["score"]["fullTime"].get("away", None)
-   home_team = match["homeTeam"]["name"]
-   away_team = match["awayTeam"]["name"]
-   home_team_id = team_name_mapping.get(home_team, -1)
-   away_team_id = team_name_mapping.get(away_team, -1)
-   match_date = datetime.strptime(match["utcDate"], '%Y-%m-%dT%H:%M:%SZ')
-   goal_diff = None if home_score is None or away_score is None else (home_score - away_score)
-   season = "23-24"
-   
-   
-   if home_score is None or away_score is None:
-      result = "Unknown"
-   elif home_score > away_score:
-      result = "Home win"
-   elif home_score < away_score:
-      result = "Away win"
-   else:
-      result = "Draw"
-
-   structured_last_season_data.append({
-      "season": season,
-      "competition": match["competition"]["name"],
-      "match_date": match_date,
-      "home_team": home_team,
-      "away_team": away_team,
-      "home_score": home_score,
-      "away_score": away_score,
-      "result": result,
-      "match_status": match["status"],
-      "goal_difference": goal_diff
-   })
-
 
 #Creating Data Frames & Analysis
 kaggleDf = pd.read_csv("past-dataPL.csv")
@@ -198,7 +133,7 @@ kaggleDf.nunique()
 kaggleDf.describe()
 
 
-df = pd.DataFrame.from_dict(structured_table_data, orient="index").reset_index()
+df = pd.DataFrame.from_dict(structuredTableData, orient="index").reset_index()
 df.rename(columns={"index": "team"}, inplace=True)
 print(df.head())
 df.info()
@@ -206,7 +141,7 @@ df.isnull().sum()
 df.nunique()
 df.describe()
 
-df2 = pd.DataFrame(structured_current_season_data)
+df2 = pd.DataFrame(structuredCurrentSeasonData)
 df2 = df2.sort_values(by='match_date', ascending=False)
 print(df2.head())
 df2.info()
@@ -214,12 +149,7 @@ df2.isnull().sum()
 df2.nunique()
 df2.describe()
 
-dfLastSeason = pd.DataFrame(structured_last_season_data)
-print(dfLastSeason.head())
-dfLastSeason.info()
-dfLastSeason.isnull().sum()
-dfLastSeason.nunique()
-dfLastSeason.describe()
+
 
 #Feauture Engineering
 def calculate_form(team, match_date):
